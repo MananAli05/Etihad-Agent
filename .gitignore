@@ -27,8 +27,9 @@ venv/
 .venv/
 ENV/
 
-# Large Media
-*.mp4
+# Large Media (>100MB raw files)
+images/Video.mp4
+public/Video.mp4
 *.zip
 *.tar.gz
 

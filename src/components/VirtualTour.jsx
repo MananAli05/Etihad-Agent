@@ -37,7 +37,7 @@ export default function VirtualTour() {
         <div className="relative rounded-2xl md:rounded-[24px] overflow-hidden shadow-2xl group max-w-5xl mx-auto border border-gray-100/80 bg-black aspect-video w-full">
           <video
             ref={videoRef}
-            src="images/Video.mp4"
+            src="/images/Video.mp4"
             className="w-full h-full object-cover"
             controls
             playsInline
