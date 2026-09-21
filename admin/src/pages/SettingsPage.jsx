@@ -13,6 +13,7 @@ import {
   Save
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { makeAvatarThumbnail, isTooLarge } from '../lib/avatar';
 import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
@@ -57,7 +58,7 @@ export default function SettingsPage() {
   }, [user, displayName, avatarUrl]);
 
   // Handle Avatar File Upload
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -66,12 +67,17 @@ export default function SettingsPage() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreviewAvatar(reader.result);
+    try {
+      // Shrink before it ever reaches user_metadata: Supabase puts that
+      // metadata in the JWT, and a full-size image there makes every
+      // authenticated request fail.
+      const thumbnail = await makeAvatarThumbnail(file);
+      setPreviewAvatar(thumbnail);
       setProfileMsg({ type: 'info', text: 'Click "Save Profile" to apply avatar.' });
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Avatar processing failed:', err);
+      setProfileMsg({ type: 'error', text: err.message });
+    }
   };
 
   // Save Profile Changes
@@ -81,15 +87,27 @@ export default function SettingsPage() {
     setProfileMsg({ type: '', text: '' });
 
     try {
+      // A legacy oversized avatar loaded from an old session would be written
+      // straight back, re-breaking the account. Drop it instead.
+      const avatar = isTooLarge(previewAvatar) ? '' : previewAvatar;
+      if (avatar !== previewAvatar) {
+        setPreviewAvatar('');
+      }
+
       await updateProfileData({
         name: name.trim(),
-        avatar: previewAvatar,
+        avatar,
         phone: phone.trim()
       });
       setProfileMsg({ type: 'success', text: 'Profile updated successfully.' });
     } catch (err) {
       console.error('Error updating profile:', err);
-      setProfileMsg({ type: 'error', text: 'Failed to update profile. Please try again.' });
+      // "Failed to fetch" means the request never reached Supabase - almost
+      // always an oversized auth header from a stale session.
+      const text = /failed to fetch|networkerror/i.test(err.message || '')
+        ? 'Could not reach the server. Sign out and sign in again, then retry.'
+        : err.message || 'Failed to update profile. Please try again.';
+      setProfileMsg({ type: 'error', text });
     } finally {
       setProfileSaving(false);
     }

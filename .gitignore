@@ -39,3 +39,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.timestamp-*.mjs
+
+# Local backups (personal data - never publish)
+admin/backup/

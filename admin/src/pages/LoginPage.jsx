@@ -3,6 +3,29 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+/**
+ * Turn a Supabase auth failure into something that points at the real
+ * problem. Only genuine credential rejections should read as such.
+ */
+function describeSignInError(err) {
+  const message = (err?.message || '').toLowerCase();
+  const code = err?.code || err?.error_code || '';
+
+  if (/failed to fetch|networkerror|load failed/.test(message)) {
+    return 'Cannot reach the server. Check your connection, or the dashboard may be misconfigured.';
+  }
+  if (code === 'email_not_confirmed' || /email not confirmed/.test(message)) {
+    return 'This account has not confirmed its email address yet.';
+  }
+  if (/rate limit|too many/.test(message)) {
+    return 'Too many attempts. Please wait a minute and try again.';
+  }
+  if (code === 'invalid_credentials' || /invalid login credentials/.test(message)) {
+    return 'Invalid email or password.';
+  }
+  return err?.message || 'Could not sign in. Please try again.';
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,8 +55,11 @@ export default function LoginPage() {
       await signIn(email.trim(), password);
       navigate(from, { replace: true });
     } catch (err) {
-      // User-friendly error message without exposing technical details
-      setError('Invalid email or password.');
+      // Keep the real cause in the console, but do not report every failure
+      // as bad credentials - a network or config problem looks identical to
+      // the user otherwise, and sends them hunting for the wrong thing.
+      console.error('[Developer Debug] Sign-in failed:', err);
+      setError(describeSignInError(err));
     } finally {
       setIsSubmitting(false);
     }
