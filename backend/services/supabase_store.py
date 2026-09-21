@@ -160,6 +160,10 @@ def upsert_lead(fields: Dict[str, Any]) -> Optional[str]:
         lead_id = existing.get("id")
         # Do not overwrite a status a human may have moved along in the CRM.
         clean.pop("status", None)
+        # Source is first-touch attribution. Three channels write to the same
+        # row keyed on phone, so letting a later touch rewrite it would credit
+        # the wrong channel with finding the customer.
+        clean.pop("source", None)
         if clean:
             _request(
                 "PATCH",

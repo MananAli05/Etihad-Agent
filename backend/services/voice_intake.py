@@ -19,6 +19,26 @@ from services.lead_extractor import extract_lead
 SIGNATURE_TOLERANCE_SECONDS = 30 * 60
 
 
+def _direction(agent_id: str) -> str:
+    """
+    Which agent produced this call.
+
+    Both agents can post to the same webhook, and they mean different things:
+    inbound is a stranger who found the website, outbound is a follow-up to
+    someone already in the CRM.
+    """
+    inbound = os.getenv("ELEVENLABS_AGENT_ID", "").strip()
+    outbound = os.getenv("ELEVENLABS_OUTBOUND_AGENT_ID", "").strip()
+
+    if outbound and agent_id == outbound:
+        return "outbound"
+    if inbound and agent_id == inbound:
+        return "inbound"
+    # An unconfigured agent is likelier to be a new website caller than a
+    # follow-up, and treating it as inbound only risks the source label.
+    return "inbound"
+
+
 def verify_signature(payload: bytes, header: Optional[str]) -> bool:
     """
     Validate the ElevenLabs-Signature header: "t=<unix>,v0=<hmac sha256>".
@@ -87,6 +107,7 @@ def handle_post_call(body: Dict[str, Any]) -> Dict[str, Any]:
 
     data = body.get("data") or body
     conversation_id = data.get("conversation_id") or "unknown"
+    direction = _direction((data.get("agent_id") or "").strip())
     history = _transcript_to_history(data.get("transcript") or [])
 
     if not history:
@@ -98,7 +119,7 @@ def handle_post_call(body: Dict[str, Any]) -> Dict[str, Any]:
         return {"status": "ignored", "reason": "persistence disabled"}
 
     # Keep the call transcript regardless of whether a lead comes out of it.
-    session_id = f"voice-{conversation_id}"
+    session_id = f"voice-{direction}-{conversation_id}"
     for message in history:
         supabase_store.save_message(
             session_id,
@@ -116,7 +137,16 @@ def handle_post_call(body: Dict[str, Any]) -> Dict[str, Any]:
         print(f"[VOICE WEBHOOK] {conversation_id}: no phone number captured")
         return {"status": "ok", "lead": None}
 
-    fields["source"] = "voice_agent"
+    # Only an inbound call discovers someone new. An outbound call is a
+    # follow-up to a lead another channel already produced, so it enriches the
+    # row without claiming the attribution. upsert_lead keeps first-touch
+    # source anyway; leaving it unset here makes that explicit.
+    if direction == "inbound":
+        fields["source"] = "voice_agent"
+
     lead_id = supabase_store.upsert_lead(fields)
-    print(f"[VOICE WEBHOOK] {conversation_id}: lead {lead_id} ({fields.get('phone')})")
-    return {"status": "ok", "lead": lead_id}
+    print(
+        f"[VOICE WEBHOOK] {conversation_id} ({direction}): "
+        f"lead {lead_id} ({fields.get('phone')})"
+    )
+    return {"status": "ok", "lead": lead_id, "direction": direction}
