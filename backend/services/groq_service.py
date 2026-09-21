@@ -29,9 +29,12 @@ def get_groq_client():
     except Exception as e:
         raise GroqServiceError(f"Failed to initialize Groq client: {str(e)}")
 
-def generate_groq_response(messages: List[Dict[str, str]]) -> str:
+def generate_groq_response(messages: List[Dict[str, str]], json_mode: bool = False) -> str:
     """
     Calls the Groq API with given chat messages and returns the assistant's reply.
+
+    json_mode constrains the model to emit a single JSON object, used by the
+    lead extractor.
     """
     client = get_groq_client()
     model = os.getenv("GROQ_MODEL", DEFAULT_MODEL).strip()
@@ -42,6 +45,11 @@ def generate_groq_response(messages: List[Dict[str, str]]) -> str:
         "temperature": 0.3,
         "max_tokens": 1024,
     }
+
+    if json_mode:
+        params["response_format"] = {"type": "json_object"}
+        # Extraction is mechanical; creativity here only invents fields.
+        params["temperature"] = 0
 
     # gpt-oss models are reasoning models: their thinking tokens are billed against
     # max_tokens, which can starve the visible answer. Keep that budget small.

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ConversationProvider, useConversation } from '@elevenlabs/react';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Empty string means same-origin (backend deployed alongside the frontend).
+// Falls back to the local FastAPI server during development.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 function VoiceModalInner({ isOpen, onClose, onOpenChat, onNavigate }) {
   const [callState, setCallState] = useState('ready'); // 'ready' | 'connecting' | 'active' | 'ended' | 'error'

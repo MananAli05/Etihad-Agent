@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const API_BASE_URL = 'http://localhost:8000';
+// Empty string means same-origin (backend deployed alongside the frontend).
+// Falls back to the local FastAPI server during development.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export default function SaraChat({ isOpen, onClose }) {
   const [messages, setMessages] = useState([]);

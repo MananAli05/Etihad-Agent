@@ -1,8 +1,13 @@
 import uuid
 import os
-from typing import Dict, List, Any
+from typing import Dict, List, Optional, Tuple
+
 from services.groq_service import generate_groq_response, GroqServiceError
 from services.knowledge_base import retrieve_context
+from services.lead_extractor import extract_lead
+from services import supabase_store
+
+FALLBACK_REPLY = "Maazrat, Sara abhi temporarily available nahi hain. Please try again."
 
 SARA_SYSTEM_PROMPT = """You are Sara, the official AI property consultant and virtual assistant for Etihad Garden, a luxury housing society in Rahim Yar Khan, Pakistan.
 
@@ -36,77 +41,104 @@ LEAD QUALIFICATION GUIDELINES:
 - Never interrogate the user. Keep conversation friendly and conversational.
 """
 
-# In-memory store for active conversations
-conversations: Dict[str, Dict[str, Any]] = {}
+# Serverless functions get a fresh process per request, so conversation state
+# lives in Supabase. This dict is only a fallback for local runs with no
+# Supabase credentials configured.
+_local_conversations: Dict[str, List[Dict[str, str]]] = {}
 
-def get_initial_lead_data() -> Dict[str, Any]:
-    return {
-        "name": None,
-        "phone_number": None,
-        "city": None,
-        "purpose": None,
-        "plot_size": None,
-        "budget_range": None,
-        "payment_method": None,
-        "phase_preference": None,
-        "timeline": None,
-        "site_visit_requested": False,
-        "follow_up_time": None,
-        "notes": None
-    }
+HISTORY_TURNS = 16
 
-def get_or_create_conversation(conversation_id: str = None) -> (str, Dict[str, Any]):
-    if not conversation_id or conversation_id not in conversations:
-        conversation_id = conversation_id or str(uuid.uuid4())
-        conversations[conversation_id] = {
-            "history": [],
-            "lead_data": get_initial_lead_data()
-        }
-    return conversation_id, conversations[conversation_id]
 
-def process_user_message(user_message: str, conversation_id: str = None) -> (str, str):
+def _load_history(session_id: str) -> List[Dict[str, str]]:
+    if supabase_store.is_enabled():
+        return supabase_store.load_history(session_id, limit=HISTORY_TURNS)
+    return _local_conversations.get(session_id, [])[-HISTORY_TURNS:]
+
+
+def _save_turn(session_id: str, user_message: str, reply: str, lead_id: Optional[str]) -> None:
+    if supabase_store.is_enabled():
+        supabase_store.save_message(session_id, "user", user_message, lead_id)
+        supabase_store.save_message(session_id, "sara", reply, lead_id)
+        return
+
+    bucket = _local_conversations.setdefault(session_id, [])
+    bucket.append({"role": "user", "content": user_message})
+    bucket.append({"role": "assistant", "content": reply})
+
+
+def _capture_lead(history: List[Dict[str, str]]) -> Optional[str]:
     """
-    Processes user chat message, retrieves context, queries Groq, updates history, and returns (reply, conversation_id).
+    Try to turn the conversation into a CRM lead.
+
+    Returns the lead id when one was written. Never raises: a CRM failure
+    must not cost the visitor their reply.
     """
-    conversation_id, conv_state = get_or_create_conversation(conversation_id)
-    history = conv_state["history"]
+    if not supabase_store.is_enabled():
+        return None
+
+    try:
+        fields = extract_lead(history)
+        if not fields:
+            return None
+        lead_id = supabase_store.upsert_lead(fields)
+        if lead_id:
+            print(f"[LEAD] Saved {lead_id} ({fields.get('name') or 'unnamed'} / {fields.get('phone')})")
+        return lead_id
+    except Exception as exc:
+        print(f"[LEAD ERROR] Lead capture failed: {exc}")
+        return None
+
+
+def _redact(err: Exception) -> str:
+    """Strip the Groq key out of anything we log."""
+    message = str(err)
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if groq_key and groq_key in message:
+        message = message.replace(groq_key, "[REDACTED]")
+    return message
+
+
+def process_user_message(user_message: str, conversation_id: str = None) -> Tuple[str, str]:
+    """
+    Processes user chat message, retrieves context, queries Groq, persists the
+    exchange, and returns (reply, conversation_id).
+    """
+    session_id = conversation_id or str(uuid.uuid4())
+    history = _load_history(session_id)
 
     # 1. Retrieve knowledge context
     relevant_context = retrieve_context(user_message)
 
     # 2. Build message payload for Groq
-    system_content = f"{SARA_SYSTEM_PROMPT}\n\n--- APPROVED ETIHAD GARDEN KNOWLEDGE CONTEXT ---\n{relevant_context}\n-----------------------------------------------"
+    system_content = (
+        SARA_SYSTEM_PROMPT
+        + "\n\n--- APPROVED ETIHAD GARDEN KNOWLEDGE CONTEXT ---\n"
+        + relevant_context
+        + "\n-----------------------------------------------"
+    )
 
     messages_payload = [{"role": "system", "content": system_content}]
-
-    # Include recent conversation history (up to 8 recent exchanges to fit within token limits)
-    recent_history = history[-8:]
-    for msg in recent_history:
-        messages_payload.append({"role": msg["role"], "content": msg["content"]})
-
-    # Append current user message
+    messages_payload.extend(history)
     messages_payload.append({"role": "user", "content": user_message})
 
     # 3. Call Groq Service
     try:
         reply = generate_groq_response(messages_payload)
     except GroqServiceError as err:
-        groq_key = os.getenv("GROQ_API_KEY", "")
-        safe_msg = str(err)
-        if groq_key and groq_key in safe_msg:
-            safe_msg = safe_msg.replace(groq_key, "[REDACTED]")
-        print(f"[CHAT ERROR] Groq request failed: {safe_msg}")
-        reply = "Maazrat, Sara abhi temporarily available nahi hain. Please try again."
+        print(f"[CHAT ERROR] Groq request failed: {_redact(err)}")
+        reply = FALLBACK_REPLY
     except Exception as ex:
-        groq_key = os.getenv("GROQ_API_KEY", "")
-        safe_msg = str(ex)
-        if groq_key and groq_key in safe_msg:
-            safe_msg = safe_msg.replace(groq_key, "[REDACTED]")
-        print(f"[CHAT ERROR] Unexpected Chat Service Error: {safe_msg}")
-        reply = "Maazrat, Sara abhi temporarily available nahi hain. Please try again."
+        print(f"[CHAT ERROR] Unexpected Chat Service Error: {_redact(ex)}")
+        reply = FALLBACK_REPLY
 
-    # 4. Update in-memory history
-    conv_state["history"].append({"role": "user", "content": user_message})
-    conv_state["history"].append({"role": "assistant", "content": reply})
+    # 4. Capture the lead before persisting, so both rows can carry lead_id.
+    full_history = history + [
+        {"role": "user", "content": user_message},
+        {"role": "assistant", "content": reply},
+    ]
+    lead_id = _capture_lead(full_history) if reply != FALLBACK_REPLY else None
 
-    return reply, conversation_id
+    # 5. Persist the exchange
+    _save_turn(session_id, user_message, reply, lead_id)
+
+    return reply, session_id

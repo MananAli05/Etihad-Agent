@@ -37,7 +37,10 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[o for o in origins if o],
+    # Production and Vercel preview deployments each get their own hostname,
+    # so match the whole *.vercel.app space rather than listing them.
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
