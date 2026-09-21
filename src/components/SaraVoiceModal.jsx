@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ConversationProvider, useConversation } from '@elevenlabs/react';
 
 // Empty string means same-origin (backend deployed alongside the frontend).
@@ -11,13 +11,21 @@ function VoiceModalInner({ isOpen, onClose, onOpenChat, onNavigate }) {
   const [slowConnectionNotice, setSlowConnectionNotice] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // The SDK callbacks below close over the render that created them, so
+  // reading callState directly there sees a stale value. Mirror it in a ref.
+  const callStateRef = useRef(callState);
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
   // ElevenLabs SDK Hook
   const conversation = useConversation({
     onConnect: () => {
       setCallState('active');
     },
     onDisconnect: () => {
-      if (callState === 'active' || callState === 'connecting') {
+      const current = callStateRef.current;
+      if (current === 'active' || current === 'connecting') {
         setCallState('ended');
       }
     },
@@ -84,10 +92,16 @@ function VoiceModalInner({ isOpen, onClose, onOpenChat, onNavigate }) {
       const signedUrl = data.signedUrl || data.signed_url;
       const agentId = data.agentId || data.agent_id;
 
+      // The agent's first message interpolates {{lead_name}}. ElevenLabs ends
+      // the conversation immediately if a referenced variable is not supplied,
+      // which surfaced as the call connecting and instantly "completing".
+      // A website visitor is anonymous, so send a neutral form of address.
+      const dynamicVariables = { lead_name: 'aap' };
+
       if (signedUrl) {
-        await conversation.startSession({ signedUrl });
+        await conversation.startSession({ signedUrl, dynamicVariables });
       } else if (agentId) {
-        await conversation.startSession({ agentId });
+        await conversation.startSession({ agentId, dynamicVariables });
       } else {
         throw new Error(data.message || 'ElevenLabs credentials missing from backend.');
       }
