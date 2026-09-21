@@ -170,7 +170,9 @@ def upsert_lead(fields: Dict[str, Any]) -> Optional[str]:
         return lead_id
 
     clean.setdefault("status", "New")
-    clean.setdefault("source", "website_chat")
+    # Channel keys must match admin SourcesPage channelMap: website_form,
+    # google_form, chatbot, voice_agent, whatsapp, inbound_call.
+    clean.setdefault("source", "chatbot")
     rows = _request(
         "POST",
         "leads",

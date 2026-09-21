@@ -1,42 +1,69 @@
 import React, { useState } from 'react';
 
-export default function InquiryForm({ onNavigate }) {
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    email: '',
-    city: '',
-    interest: 'Residential Plot',
-    budget: 'Under 1 Crore',
-    plot_size: '3 Marla',
-    phase_preference: 'Phase 1',
-    message: '',
-  });
+// Empty string means same-origin (backend deployed alongside the frontend).
+// Falls back to the local FastAPI server during development.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
+const EMPTY_FORM = {
+  name: '',
+  phone: '',
+  email: '',
+  city: '',
+  interest: 'Residential Plot',
+  budget: 'Under 1 Crore',
+  plot_size: '3 Marla',
+  phase_preference: 'Phase 1',
+  message: '',
+};
+
+export default function InquiryForm({ onNavigate }) {
+  const [formData, setFormData] = useState(EMPTY_FORM);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      setFormData({
-        name: '',
-        phone: '',
-        email: '',
-        city: '',
-        interest: 'Residential Plot',
-        budget: 'Under 1 Crore',
-        plot_size: '3 Marla',
-        phase_preference: 'Phase 1',
-        message: '',
+    if (submitting) return;
+
+    setSubmitting(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
       });
-    }, 4000);
+
+      if (!response.ok) {
+        // FastAPI puts validation problems in `detail`; show that where we can.
+        let detail = '';
+        try {
+          detail = (await response.json())?.detail || '';
+        } catch (parseErr) {
+          detail = '';
+        }
+        throw new Error(detail || `Submission failed (HTTP ${response.status})`);
+      }
+
+      setSubmitted(true);
+      setFormData(EMPTY_FORM);
+      setTimeout(() => setSubmitted(false), 6000);
+    } catch (err) {
+      console.error('[Developer Debug] Inquiry form submission failed:', err);
+      setError(
+        err.message ||
+          'Sorry, we could not submit your inquiry. Please try again or contact us directly.'
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -277,11 +304,31 @@ export default function InquiryForm({ onNavigate }) {
 
               {/* Submit Button & Trust Microcopy */}
               <div className="pt-2">
+                {error && (
+                  <div
+                    role="alert"
+                    className="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2"
+                  >
+                    <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{error}</span>
+                  </div>
+                )}
+
                 <button
-                  className="w-full h-[48px] sm:h-[50px] bg-burgundy hover:bg-[#521923] text-white font-semibold text-base rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 group cursor-pointer"
+                  className="w-full h-[48px] sm:h-[50px] bg-burgundy hover:bg-[#521923] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 text-white font-semibold text-base rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 group cursor-pointer"
                   type="submit"
+                  disabled={submitting}
                 >
-                  <span>Submit Inquiry</span>
+                  {submitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <span>Submit Inquiry</span>
+                  )}
                 </button>
 
                 <div className="text-center text-xs text-taupe mt-3 space-y-1">

@@ -1,13 +1,15 @@
 import os
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # Import process_user_message from services
 from services.chat_service import process_user_message
+from services import supabase_store, voice_intake
+from services.lead_extractor import normalise_phone
 
 # Ensure backend/.env is explicitly loaded regardless of current working directory
 env_path = Path(__file__).parent / ".env"
@@ -90,6 +92,109 @@ def chat_endpoint(request: ChatRequest):
             reply="Maazrat, Sara abhi temporarily available nahi hain. Please try again.",
             conversation_id=request.conversation_id or "default-session"
         )
+
+class LeadFormRequest(BaseModel):
+    name: str = Field(..., description="Full name")
+    phone: str = Field(..., description="Contact number")
+    email: Optional[str] = Field(None)
+    city: Optional[str] = Field(None)
+    interest: Optional[str] = Field(None, description="Residential Plot / Commercial Property / ...")
+    budget: Optional[str] = Field(None)
+    plot_size: Optional[str] = Field(None)
+    phase_preference: Optional[str] = Field(None)
+    message: Optional[str] = Field(None)
+
+
+class LeadFormResponse(BaseModel):
+    status: str
+    lead_id: Optional[str] = None
+
+
+# The selects default to a filled-in option, so "no answer" arrives as one of
+# these rather than as an empty field. Store null instead of a fake preference.
+UNSET_CHOICES = {"not sure", "no preference", ""}
+
+
+def _choice(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    return None if value.strip().lower() in UNSET_CHOICES else value.strip()
+
+
+@app.post("/api/leads", response_model=LeadFormResponse, status_code=status.HTTP_200_OK)
+def submit_lead(request: LeadFormRequest):
+    """
+    POST /api/leads - landing page inquiry form.
+
+    Shares the leads table with the chatbot and voice agent, keyed on phone,
+    so the same person enquiring twice enriches one row.
+    """
+    phone = normalise_phone(request.phone)
+    if not phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please enter a valid Pakistani mobile number, e.g. 03001234567.",
+        )
+
+    if not supabase_store.is_enabled():
+        print("[LEAD FORM] Supabase not configured; submission dropped")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Lead storage is not configured.",
+        )
+
+    fields = {
+        "name": (request.name or "").strip() or None,
+        "phone": phone,
+        "email": (request.email or "").strip() or None,
+        "city": (request.city or "").strip() or None,
+        "purpose": _choice(request.interest),
+        "budget_range": _choice(request.budget),
+        "plot_size": _choice(request.plot_size),
+        "phase_preference": _choice(request.phase_preference),
+        "notes": (request.message or "").strip() or None,
+        "source": "website_form",
+    }
+
+    try:
+        lead_id = supabase_store.upsert_lead(fields)
+    except Exception as exc:
+        print(f"[LEAD FORM] Failed to save: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not save your inquiry. Please try again.",
+        )
+
+    print(f"[LEAD FORM] Saved {lead_id} ({fields['name']} / {phone})")
+    return LeadFormResponse(status="ok", lead_id=lead_id)
+
+
+@app.post("/api/voice/webhook", status_code=status.HTTP_200_OK)
+async def voice_webhook(request: Request):
+    """
+    POST /api/voice/webhook - ElevenLabs post-call transcription.
+
+    Configured under the agent's post-call webhook. Saves the transcript and
+    promotes it to a lead when a phone number was captured on the call.
+    """
+    raw = await request.body()
+
+    if not voice_intake.verify_signature(raw, request.headers.get("ElevenLabs-Signature")):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature.",
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Body must be JSON.",
+        )
+
+    return voice_intake.handle_post_call(body)
+
 
 @app.get("/api/voice/signed-url")
 async def get_signed_url():
