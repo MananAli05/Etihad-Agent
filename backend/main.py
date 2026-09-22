@@ -103,6 +103,12 @@ class LeadFormRequest(BaseModel):
     plot_size: Optional[str] = Field(None)
     phase_preference: Optional[str] = Field(None)
     message: Optional[str] = Field(None)
+    source: Optional[str] = Field(None, description="Channel key; defaults to website_form")
+
+
+# Keys the admin SourcesPage knows how to display. Anything else would create
+# a lead the Sources page cannot attribute.
+FORM_SOURCES = {"website_form", "google_form", "whatsapp", "inbound_call"}
 
 
 class LeadFormResponse(BaseModel):
@@ -153,7 +159,7 @@ def submit_lead(request: LeadFormRequest):
         "plot_size": _choice(request.plot_size),
         "phase_preference": _choice(request.phase_preference),
         "notes": (request.message or "").strip() or None,
-        "source": "website_form",
+        "source": request.source if request.source in FORM_SOURCES else "website_form",
     }
 
     try:
