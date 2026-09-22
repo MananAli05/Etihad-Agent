@@ -46,11 +46,12 @@ function installTrigger() {
 }
 
 function onFormSubmit(e) {
-  var answers = e && e.namedValues ? e.namedValues : {};
+  var answers = collectAnswers(e);
+  Logger.log('Answers received: ' + JSON.stringify(answers));
 
   var payload = { source: 'google_form' };
   Object.keys(FIELDS).forEach(function (key) {
-    payload[key] = readAnswer(answers, FIELDS[key]);
+    payload[key] = answers[FIELDS[key]] || '';
   });
 
   if (!payload.name || !payload.phone) {
@@ -77,10 +78,37 @@ function onFormSubmit(e) {
   }
 }
 
-/** Google gives every answer as an array, and unanswered ones as ['']. */
-function readAnswer(answers, title) {
-  var value = answers[title];
-  if (!value) return '';
-  var text = Array.isArray(value) ? value.join(', ') : String(value);
-  return text.trim();
+/**
+ * Read the submitted answers as {question title: answer}.
+ *
+ * A trigger bound to the FORM hands over e.response, a FormResponse. The
+ * e.namedValues shape belongs to a trigger bound to the linked SPREADSHEET -
+ * reading it here returns nothing at all and every response looks empty.
+ * Both are handled so the script works whichever way it is installed.
+ */
+function collectAnswers(e) {
+  var answers = {};
+
+  if (e && e.response && typeof e.response.getItemResponses === 'function') {
+    e.response.getItemResponses().forEach(function (item) {
+      answers[item.getItem().getTitle().trim()] = flatten(item.getResponse());
+    });
+    return answers;
+  }
+
+  if (e && e.namedValues) {
+    Object.keys(e.namedValues).forEach(function (title) {
+      answers[title.trim()] = flatten(e.namedValues[title]);
+    });
+    return answers;
+  }
+
+  Logger.log('No recognisable response on the event. Run the form, not this function, to test.');
+  return answers;
+}
+
+/** Checkboxes give an array; everything else a string. */
+function flatten(value) {
+  if (value === null || value === undefined) return '';
+  return (Array.isArray(value) ? value.join(', ') : String(value)).trim();
 }

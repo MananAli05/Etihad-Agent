@@ -7,6 +7,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000
 // Pakistani mobile numbers written locally: 03 followed by nine digits.
 const PHONE_LENGTH = 11;
 const PHONE_RE = /^03\d{9}$/;
+// type="email" only asks for an @; this also insists on a real domain and
+// a TLD, so a typo like "name@gmail" is caught before it reaches the CRM.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/;
 
 const EMPTY_FORM = {
   name: '',
@@ -47,6 +50,12 @@ export default function InquiryForm({ onNavigate }) {
 
     if (!PHONE_RE.test(formData.phone)) {
       setError('Please enter an 11-digit mobile number starting with 03, for example 03001234567.');
+      return;
+    }
+
+    const email = formData.email.trim();
+    if (email && !EMAIL_RE.test(email)) {
+      setError('Please enter a valid email address, for example name@example.com.');
       return;
     }
 
