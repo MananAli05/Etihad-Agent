@@ -20,6 +20,8 @@ from urllib.parse import quote
 
 import httpx
 
+from services import notify
+
 TIMEOUT = 8.0
 
 
@@ -184,5 +186,9 @@ def upsert_lead(fields: Dict[str, Any]) -> Optional[str]:
         extra_headers={"Prefer": "return=representation"},
     )
     if rows and isinstance(rows, list):
-        return rows[0].get("id")
+        lead_id = rows[0].get("id")
+        # Only on insert: an existing lead being enriched is already known to
+        # the sales team, and a mail per turn of a conversation is noise.
+        notify.send_lead_alert(clean, lead_id)
+        return lead_id
     return None

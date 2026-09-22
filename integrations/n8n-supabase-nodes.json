@@ -1,0 +1,90 @@
+{
+  "_comment": "Paste into the n8n canvas (click canvas, Ctrl+V) to replace the two Google Sheets nodes in 'Etihad Town - AI Calling Agent'. See n8n-crm-link.md for wiring. Create the header-auth credential named 'Supabase service_role' first; no key is stored in this file.",
+  "meta": { "instanceId": "etihad-crm-link" },
+  "nodes": [
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://gnonqfdyufszdymynftq.supabase.co/rest/v1/leads",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "status", "value": "eq.New" },
+            { "name": "select", "value": "id,name,phone,city,purpose,plot_size,budget_range,phase_preference,status,source" },
+            { "name": "order", "value": "created_at.asc" },
+            { "name": "limit", "value": "25" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "crm-read-pending",
+      "name": "CRM - Read Pending Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [340, 480],
+      "credentials": {
+        "httpHeaderAuth": { "name": "Supabase service_role" }
+      },
+      "notes": "Replaces 'Google Sheets - Read Pending Leads'. status='New' is the CRM's equivalent of pending, so every channel's leads are picked up, not just the ones typed into a sheet."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://gnonqfdyufszdymynftq.supabase.co/rest/v1/leads?id=eq.{{ $json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'Calling' }) }}",
+        "options": {}
+      },
+      "id": "crm-mark-calling",
+      "name": "CRM - Status = Calling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 480],
+      "credentials": {
+        "httpHeaderAuth": { "name": "Supabase service_role" }
+      },
+      "notes": "Replaces 'Status = calling'. Marking before the call stops a second run picking the same lead up while the first call is still going."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://gnonqfdyufszdymynftq.supabase.co/rest/v1/leads?id=eq.{{ $('CRM - Read Pending Leads').item.json.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'Contacted', interest_level: $json.interest_level || null, site_visit_requested: $json.site_visit_requested === true, notes: $json.summary || null, follow_up_time: $json.follow_up_time || null }) }}",
+        "options": {}
+      },
+      "id": "crm-save-result",
+      "name": "CRM - Save Call Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1590, 480],
+      "credentials": {
+        "httpHeaderAuth": { "name": "Supabase service_role" }
+      },
+      "notes": "Replaces 'Google Sheets - Results Save Karo' and 'Lead Status = called'. Writes what Groq pulled out of the transcript back onto the same lead row, so the CRM shows the call outcome beside how the lead arrived. Field names must match the leads table: interest_level, site_visit_requested, notes, follow_up_time."
+    }
+  ],
+  "connections": {}
+}
