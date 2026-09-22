@@ -59,11 +59,31 @@ class ChatResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+    # Booleans only. Which integrations are wired up is worth knowing from
+    # outside; their values are not, so nothing here reveals one.
+    config: Optional[dict] = None
 
 @app.get("/api/health", response_model=HealthResponse, status_code=status.HTTP_200_OK)
 def health_check():
-    """Health check endpoint to verify backend status."""
-    return {"status": "ok"}
+    """
+    Health check, plus which integrations this deployment can actually reach.
+
+    Environment variables set in a hosting dashboard only take effect on the
+    next build, so "I added it" and "it is live" are different facts. This
+    reports the second one without exposing any value.
+    """
+    from services import notify
+
+    return {
+        "status": "ok",
+        "config": {
+            "groq": bool(os.getenv("GROQ_API_KEY", "").strip()),
+            "supabase": supabase_store.is_enabled(),
+            "elevenlabs": bool(os.getenv("ELEVENLABS_API_KEY", "").strip()),
+            "webhook_signature": bool(os.getenv("ELEVENLABS_WEBHOOK_SECRET", "").strip()),
+            "email_alerts": notify.is_enabled(),
+        },
+    }
 
 @app.post("/api/chat", response_model=ChatResponse, status_code=status.HTTP_200_OK)
 def chat_endpoint(request: ChatRequest):
