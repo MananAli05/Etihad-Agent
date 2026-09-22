@@ -1,8 +1,14 @@
 import React, { useState } from 'react';
 
-// Empty string means same-origin (backend deployed alongside the frontend).
-// Falls back to the local FastAPI server during development.
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+// In production the API is served from this same domain, so an empty base
+// resolves to /api/... Only development needs an absolute URL, because the
+// site and the FastAPI server run on different ports there.
+//
+// Defaulting to localhost in production made every visitor's browser call
+// their own machine. It appeared to work purely because a local backend
+// happened to be running on the developer's laptop.
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '');
 
 // Pakistani mobile numbers written locally: 03 followed by nine digits.
 const PHONE_LENGTH = 11;
