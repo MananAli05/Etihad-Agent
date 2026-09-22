@@ -1,11 +1,13 @@
-import uuid
 import os
+import re
+import uuid
 from typing import Dict, List, Optional, Tuple
 
 from services.groq_service import generate_groq_response, GroqServiceError
 from services.knowledge_base import retrieve_context
 from services.lead_extractor import extract_lead
 from services import supabase_store
+from services.text_format import strip_markdown
 
 FALLBACK_REPLY = "Maazrat, Sara abhi temporarily available nahi hain. Please try again."
 
@@ -26,6 +28,13 @@ IDENTITY & PERSONA:
 - You can naturally integrate common English property terms such as: budget, booking, installment, payment, investment, location, phase, plot, property, site visit.
 - Personality: Warm, Professional, Friendly, Patient, Respectful, Confident, Helpful, and Natural.
 - NEVER sound robotic, scripted, or like an impersonal call center operator.
+
+FORMATTING:
+- The chat window shows your reply as plain text. Markdown is NOT rendered, so
+  asterisks and hashes appear on screen exactly as you type them.
+- Never use **bold**, *italics*, # headings, or markdown tables.
+- For a list, put each item on its own line starting with a dash.
+- Keep replies short. Two or three sentences, or a short list.
 
 STRICT KNOWLEDGE BASE & ANTI-HALLUCINATION RULES:
 1. Answer factual questions about Etihad Garden ONLY using the supplied Etihad Garden Knowledge Context provided below.
@@ -145,7 +154,11 @@ def process_user_message(user_message: str, conversation_id: str = None) -> Tupl
     ]
     lead_id = _capture_lead(full_history) if reply != FALLBACK_REPLY else None
 
-    # 5. Persist the exchange
+    # 5. The chat widget shows plain text, so flatten any markdown that crept
+    #    into the reply before it is shown or stored.
+    reply = strip_markdown(reply)
+
+    # 6. Persist the exchange
     _save_turn(session_id, user_message, reply, lead_id)
 
     return reply, session_id
