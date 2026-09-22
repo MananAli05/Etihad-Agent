@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PhoneCall, RotateCw, PhoneIncoming, PhoneOutgoing, MessageSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { fmtDateTime, STATUS_TONE } from '../hooks/useLeads';
+import { fmtDateTime, STATUS_TONE, interestLabel } from '../hooks/useLeads';
 
 /**
  * Call history.
@@ -217,7 +217,7 @@ export default function CallsPage() {
 
                     <p className="text-[11px] text-gray-400 mt-0.5 truncate">
                       {call.lead
-                        ? [call.lead.plot_size, call.lead.budget_range, call.lead.interest_level]
+                        ? [call.lead.plot_size, call.lead.budget_range, interestLabel(call.lead.interest_level)]
                             .filter(Boolean)
                             .join(' • ') || 'Nothing captured'
                         : 'No lead created from this call'}

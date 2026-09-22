@@ -75,6 +75,21 @@ export const STATUS_TONE = {
   'Not Interested': 'bg-rose-50 text-rose-700 border-rose-200'
 };
 
+/**
+ * How an interest level reads on screen.
+ *
+ * The stored values stay Hot/Warm/Cold, which is what every CRM uses and what
+ * the extraction prompt writes. Only the label carries the extra word, so a
+ * badge reads as a judgement about the lead rather than a bare adjective.
+ */
+export const INTEREST_LABELS = {
+  Hot: 'Hot Lead',
+  Warm: 'Warm Lead',
+  Cold: 'Cold Lead'
+};
+
+export const interestLabel = (value) => INTEREST_LABELS[value] || value;
+
 export const SOURCE_LABELS = {
   website_form: 'Website Form',
   google_form: 'Google Form',

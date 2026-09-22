@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, Eye, ArrowRight, X, Users } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { interestLabel } from '../hooks/useLeads';
 
 const sourceMap = {
   website_form: 'Website Form',
@@ -239,7 +240,7 @@ export default function RecentLeadsTable({ leads: propLeads, loading: propLoadin
                               interestColors[lead.interest_level] || 'bg-gray-100 text-gray-600'
                             }`}
                           >
-                            {lead.interest_level}
+                            {interestLabel(lead.interest_level)}
                           </span>
                         )}
                       </div>

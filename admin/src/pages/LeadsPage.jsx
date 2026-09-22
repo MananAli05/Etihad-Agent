@@ -22,6 +22,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { interestLabel } from '../hooks/useLeads';
 
 // Source mapping helper
 const sourceMap = {
@@ -410,9 +411,9 @@ export default function LeadsPage() {
               className="w-full px-3 py-2 bg-ivory/60 border border-gray-200 rounded-xl text-xs font-medium text-charcoal focus:outline-none focus:border-burgundy cursor-pointer"
             >
               <option value="All">Interest: All</option>
-              <option value="Hot">Hot</option>
-              <option value="Warm">Warm</option>
-              <option value="Cold">Cold</option>
+              <option value="Hot">Hot Lead</option>
+              <option value="Warm">Warm Lead</option>
+              <option value="Cold">Cold Lead</option>
               <option value="Not Interested">Not Interested</option>
             </select>
           </div>
@@ -496,7 +497,7 @@ export default function LeadsPage() {
                                 interestColors[lead.interest_level] || 'bg-gray-100 text-gray-600'
                               }`}
                             >
-                              {lead.interest_level}
+                              {interestLabel(lead.interest_level)}
                             </span>
                           )}
                         </div>
@@ -796,7 +797,7 @@ export default function LeadsPage() {
                   </div>
                   <div className="bg-ivory/60 p-2.5 rounded-xl border border-gray-100">
                     <span className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Interest Level</span>
-                    <span className="font-semibold text-amber-800">{renderVal(selectedLead.interest_level)}</span>
+                    <span className="font-semibold text-amber-800">{renderVal(interestLabel(selectedLead.interest_level))}</span>
                   </div>
                   <div className="bg-ivory/60 p-2.5 rounded-xl border border-gray-100">
                     <span className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">Purpose</span>
@@ -1027,9 +1028,9 @@ export default function LeadsPage() {
                     onChange={(e) => setNewLead({ ...newLead, interest_level: e.target.value })}
                     className="w-full px-3 py-2 bg-ivory/60 border border-gray-200 rounded-xl text-xs text-charcoal focus:outline-none focus:border-burgundy cursor-pointer"
                   >
-                    <option value="Hot">Hot</option>
-                    <option value="Warm">Warm</option>
-                    <option value="Cold">Cold</option>
+                    <option value="Hot">Hot Lead</option>
+                    <option value="Warm">Warm Lead</option>
+                    <option value="Cold">Cold Lead</option>
                     <option value="Not Interested">Not Interested</option>
                   </select>
                 </div>

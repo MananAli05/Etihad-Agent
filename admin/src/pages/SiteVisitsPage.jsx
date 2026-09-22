@@ -1,7 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { MapPin, RotateCw, Phone, MessageCircle, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useLeads, fmtDateTime, STATUS_TONE, SOURCE_LABELS } from '../hooks/useLeads';
+import {
+  useLeads,
+  fmtDateTime,
+  STATUS_TONE,
+  SOURCE_LABELS,
+  interestLabel
+} from '../hooks/useLeads';
 
 /**
  * Site visits.
@@ -99,7 +105,7 @@ export default function SiteVisitsPage() {
                     </span>
                     {lead.interest_level && (
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
-                        {lead.interest_level}
+                        {interestLabel(lead.interest_level)}
                       </span>
                     )}
                   </div>
