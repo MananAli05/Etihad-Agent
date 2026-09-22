@@ -175,7 +175,7 @@ export default function RecentLeadsTable({ leads: propLeads, loading: propLoadin
             <tr className="bg-ivory/50 border-b border-gray-100 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
               <th className="py-3 px-4">Lead</th>
               <th className="py-3 px-4">Source</th>
-              <th className="py-3 px-4">Interest</th>
+              <th className="py-3 px-4">Purpose / Interest</th>
               <th className="py-3 px-4">Plot Size</th>
               <th className="py-3 px-4">Phase</th>
               <th className="py-3 px-4">Status</th>
@@ -224,19 +224,25 @@ export default function RecentLeadsTable({ leads: propLeads, loading: propLoadin
                       </span>
                     </td>
 
-                    {/* Interest */}
+                    {/* Purpose / Interest - purpose is what they asked for,
+                        interest_level is how warm they are. Only the chatbot
+                        and voice agent infer a level, so form leads have none
+                        and the column would otherwise always read empty. */}
                     <td className="py-3 px-4 font-medium">
-                      {lead.interest_level ? (
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                            interestColors[lead.interest_level] || 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {lead.interest_level}
+                      <div className="space-y-0.5">
+                        <span className="block text-charcoal">
+                          {renderVal(lead.purpose)}
                         </span>
-                      ) : (
-                        <span className="text-gray-400">Not provided</span>
-                      )}
+                        {lead.interest_level && (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              interestColors[lead.interest_level] || 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {lead.interest_level}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Plot Size */}
