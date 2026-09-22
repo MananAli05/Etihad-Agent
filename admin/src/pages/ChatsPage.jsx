@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, RotateCw, ArrowLeft, MessageSquare, Phone, User, Inbox } from 'lucide-react';
+import {
+  Search,
+  RotateCw,
+  ArrowLeft,
+  MessageSquare,
+  Phone,
+  User,
+  Inbox,
+  Trash2,
+  AlertTriangle
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 /**
@@ -104,6 +114,9 @@ export default function ChatsPage() {
   const [tab, setTab] = useState('all');
   const [selectedId, setSelectedId] = useState(null);
   const [showMobileDetail, setShowMobileDetail] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const load = async (isManualRefresh = false) => {
     if (isManualRefresh) setRefreshing(true);
@@ -141,6 +154,52 @@ export default function ChatsPage() {
   useEffect(() => {
     load();
   }, []);
+
+  /**
+   * Delete every message in a conversation.
+   *
+   * PostgREST answers a blocked DELETE with 204 and no error, because RLS
+   * makes the rows invisible rather than refusing the statement. So success
+   * is confirmed by reading back, not by the status code - otherwise the row
+   * disappears from the screen and is still in the database.
+   */
+  const deleteConversation = async (sessionId) => {
+    setDeleting(true);
+    setDeleteError('');
+
+    try {
+      const { error } = await supabase
+        .from('chat_history')
+        .delete()
+        .eq('session_id', sessionId);
+
+      if (error) throw error;
+
+      const { data: left, error: checkError } = await supabase
+        .from('chat_history')
+        .select('id')
+        .eq('session_id', sessionId)
+        .limit(1);
+
+      if (checkError) throw checkError;
+
+      if (left && left.length > 0) {
+        throw new Error(
+          'The database refused the delete. A delete policy for signed-in users is missing on chat_history.'
+        );
+      }
+
+      setRows((prev) => prev.filter((r) => r.session_id !== sessionId));
+      if (selectedId === sessionId) setSelectedId(null);
+      setConfirmDelete(null);
+      setShowMobileDetail(false);
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+      setDeleteError(err.message || 'Could not delete this conversation.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const conversations = useMemo(() => buildConversations(rows, leadsById), [rows, leadsById]);
 
@@ -359,9 +418,23 @@ export default function ChatsPage() {
                     </div>
                   </div>
 
-                  <span className="text-[10px] text-gray-400 shrink-0 hidden sm:block">
-                    {new Date(selected.startedAt).toLocaleString()}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] text-gray-400 hidden sm:block">
+                      {new Date(selected.startedAt).toLocaleString()}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteError('');
+                        setConfirmDelete(selected);
+                      }}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                      title="Delete this conversation"
+                      aria-label="Delete this conversation"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto max-h-[58vh] p-4 space-y-2.5 bg-ivory/30">
@@ -398,6 +471,71 @@ export default function ChatsPage() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation. Removing a transcript cannot be undone, and the
+          lead it produced is a separate record that stays put. */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-5">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4.5 h-4.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-charcoal">Delete this conversation?</h3>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                  {confirmDelete.messages.length} message
+                  {confirmDelete.messages.length === 1 ? '' : 's'} from{' '}
+                  <span className="font-semibold text-charcoal">
+                    {confirmDelete.name || 'an unnamed visitor'}
+                  </span>{' '}
+                  will be permanently removed. This cannot be undone.
+                </p>
+                {confirmDelete.lead && (
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    The lead record stays in Leads - only the transcript goes.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {deleteError && (
+              <p className="mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-medium">
+                {deleteError}
+              </p>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDelete(null);
+                  setDeleteError('');
+                }}
+                disabled={deleting}
+                className="flex-1 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-charcoal hover:bg-ivory transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteConversation(confirmDelete.sessionId)}
+                disabled={deleting}
+                className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >
+                {deleting ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
