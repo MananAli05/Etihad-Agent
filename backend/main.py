@@ -82,6 +82,7 @@ def health_check():
             "elevenlabs": bool(os.getenv("ELEVENLABS_API_KEY", "").strip()),
             "webhook_signature": bool(os.getenv("ELEVENLABS_WEBHOOK_SECRET", "").strip()),
             "email_alerts": notify.is_enabled(),
+            "email_last_error": notify.last_error(),
         },
     }
 

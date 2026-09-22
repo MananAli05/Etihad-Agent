@@ -21,6 +21,16 @@ from typing import Any, Dict, Optional
 
 TIMEOUT = 10
 
+# The last send failure, surfaced on /api/health. A deployment's mail problems
+# are invisible otherwise: sending is best-effort and the visitor's request
+# succeeds either way, so nothing reaches the browser or the CRM to say why no
+# alert arrived.
+_last_error = None
+
+
+def last_error():
+    return _last_error
+
 # Ordered so the most decision-useful fields come first in the email.
 FIELD_LABELS = [
     ("phone", "Phone"),
@@ -112,8 +122,11 @@ def send_lead_alert(fields: Dict[str, Any], lead_id: Optional[str] = None) -> bo
     the caller is in the middle of answering a visitor.
     """
     cfg = _config()
+    global _last_error
+
     if not is_enabled():
         print("[NOTIFY] SMTP not configured; skipping lead alert")
+        _last_error = "SMTP not configured"
         return False
 
     message = EmailMessage()
@@ -139,8 +152,10 @@ def send_lead_alert(fields: Dict[str, Any], lead_id: Optional[str] = None) -> bo
     except Exception as exc:
         # Logged, not raised: the lead is already saved and the visitor is
         # waiting on a reply.
-        print(f"[NOTIFY ERROR] Could not send lead alert: {exc}")
+        _last_error = f"{type(exc).__name__}: {exc}"
+        print(f"[NOTIFY ERROR] Could not send lead alert: {_last_error}")
         return False
 
+    _last_error = None
     print(f"[NOTIFY] Lead alert sent to {cfg['to']} for {fields.get('phone')}")
     return True
