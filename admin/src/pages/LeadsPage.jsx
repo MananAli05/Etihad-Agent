@@ -17,7 +17,9 @@ import {
   ChevronRight,
   User,
   Clock,
-  Shield
+  Shield,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -80,6 +82,10 @@ export default function LeadsPage() {
   // Modal States
   const [selectedLead, setSelectedLead] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [linkedMessages, setLinkedMessages] = useState(null);
   const [isInserting, setIsInserting] = useState(false);
   const [addError, setAddError] = useState('');
 
@@ -102,6 +108,69 @@ export default function LeadsPage() {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
+
+  /**
+   * Open the delete confirmation, and find out what else goes with the lead.
+   *
+   * chat_history rows cascade when a lead is removed, so deleting a lead also
+   * destroys the conversation it came from. The count makes that visible
+   * before the decision rather than after it.
+   */
+  const askDelete = async (lead) => {
+    setDeleteError('');
+    setLinkedMessages(null);
+    setConfirmDelete(lead);
+
+    try {
+      const { count, error: countError } = await supabase
+        .from('chat_history')
+        .select('id', { count: 'exact', head: true })
+        .eq('lead_id', lead.id);
+
+      if (countError) throw countError;
+      setLinkedMessages(count ?? 0);
+    } catch (err) {
+      console.error('Could not count linked messages:', err);
+      setLinkedMessages(null);
+    }
+  };
+
+  /**
+   * Delete a lead for good.
+   *
+   * PostgREST answers a DELETE that RLS blocks with 204 and no error, so the
+   * row is read back before it is dropped from the table on screen. Without
+   * that check a refused delete looks exactly like a successful one.
+   */
+  const deleteLead = async (lead) => {
+    setDeleting(true);
+    setDeleteError('');
+
+    try {
+      const { error: deleteError2 } = await supabase.from('leads').delete().eq('id', lead.id);
+      if (deleteError2) throw deleteError2;
+
+      const { data: left, error: checkError } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('id', lead.id)
+        .limit(1);
+
+      if (checkError) throw checkError;
+      if (left && left.length > 0) {
+        throw new Error('The database refused the delete. A delete policy for leads is missing.');
+      }
+
+      setLeads((prev) => prev.filter((l) => l.id !== lead.id));
+      if (selectedLead && selectedLead.id === lead.id) setSelectedLead(null);
+      setConfirmDelete(null);
+    } catch (err) {
+      console.error('Failed to delete lead:', err);
+      setDeleteError(err.message || 'Could not delete this lead.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Fetch Leads from Supabase
   const fetchLeads = useCallback(async (isManualRefresh = false) => {
@@ -472,14 +541,25 @@ export default function LeadsPage() {
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedLead(lead)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-burgundy hover:bg-ivory transition-colors cursor-pointer"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedLead(lead)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-burgundy hover:bg-ivory transition-colors cursor-pointer"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => askDelete(lead)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Delete lead"
+                            aria-label={`Delete ${lead.name || 'lead'}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1018,6 +1098,77 @@ export default function LeadsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation. Removing a lead cascades to its conversation, so
+          the count of what else disappears is shown before deciding. */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-5">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-charcoal">Delete this lead?</h3>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                  <span className="font-semibold text-charcoal">
+                    {confirmDelete.name || 'This lead'}
+                  </span>
+                  {confirmDelete.phone ? ` (${confirmDelete.phone})` : ''} will be permanently
+                  removed. This cannot be undone.
+                </p>
+
+                {linkedMessages === null ? (
+                  <p className="text-[11px] text-gray-400 mt-2">Checking linked conversation...</p>
+                ) : linkedMessages > 0 ? (
+                  <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2 mt-2 font-medium">
+                    The {linkedMessages} message
+                    {linkedMessages === 1 ? '' : 's'} of their conversation will be deleted with
+                    them.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-gray-400 mt-2">No conversation attached.</p>
+                )}
+              </div>
+            </div>
+
+            {deleteError && (
+              <p className="mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-medium">
+                {deleteError}
+              </p>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmDelete(null);
+                  setDeleteError('');
+                }}
+                disabled={deleting}
+                className="flex-1 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-charcoal hover:bg-ivory transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteLead(confirmDelete)}
+                disabled={deleting}
+                className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >
+                {deleting ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete permanently'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
