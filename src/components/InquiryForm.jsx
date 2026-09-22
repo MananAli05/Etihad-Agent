@@ -4,6 +4,10 @@ import React, { useState } from 'react';
 // Falls back to the local FastAPI server during development.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
+// Pakistani mobile numbers written locally: 03 followed by nine digits.
+const PHONE_LENGTH = 11;
+const PHONE_RE = /^03\d{9}$/;
+
 const EMPTY_FORM = {
   name: '',
   phone: '',
@@ -24,12 +28,27 @@ export default function InquiryForm({ onNavigate }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
+    if (name === 'phone') {
+      // A phone number is a code, not a quantity: strip anything that is not
+      // a digit as it is typed and stop at 11, so the field cannot hold a
+      // value the form would later reject.
+      const digits = value.replace(/\D/g, '').slice(0, PHONE_LENGTH);
+      setFormData((prev) => ({ ...prev, phone: digits }));
+      return;
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
+
+    if (!PHONE_RE.test(formData.phone)) {
+      setError('Please enter an 11-digit mobile number starting with 03, for example 03001234567.');
+      return;
+    }
 
     setSubmitting(true);
     setError('');
@@ -133,7 +152,7 @@ export default function InquiryForm({ onNavigate }) {
                   </label>
                   <div className="flex h-[48px] rounded-xl border border-[#DDD8D0] focus-within:border-burgundy focus-within:ring-3 focus-within:ring-burgundy/10 bg-white overflow-hidden transition-all duration-200">
                     <span className="inline-flex items-center px-3 bg-[#FAF8F5] text-charcoal/80 text-xs sm:text-sm font-medium border-r border-[#DDD8D0] select-none">
-                      🇵🇰 +92
+                      🇵🇰 PK
                     </span>
                     <input
                       className="w-full h-full px-3.5 text-charcoal text-sm placeholder:text-taupe/60 bg-transparent outline-none"
@@ -141,11 +160,25 @@ export default function InquiryForm({ onNavigate }) {
                       name="phone"
                       value={formData.phone}
                       onChange={handleChange}
-                      placeholder="03xx xxxxxxx"
+                      placeholder="03001234567"
                       required
                       type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      maxLength={PHONE_LENGTH}
+                      aria-describedby="phone-hint"
                     />
                   </div>
+                  <p
+                    id="phone-hint"
+                    className={`mt-1 text-[11px] ${
+                      formData.phone && !PHONE_RE.test(formData.phone)
+                        ? 'text-rose-600'
+                        : 'text-taupe/80'
+                    }`}
+                  >
+                    {formData.phone.length}/{PHONE_LENGTH} digits
+                  </p>
                 </div>
 
                 {/* Row 2: Email Address */}
