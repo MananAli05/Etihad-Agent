@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Users, UserCheck, CheckCircle2, MapPin, RotateCw, Activity, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import PipelineBars from '../components/charts/PipelineBars';
+import SourceDonut from '../components/charts/SourceDonut';
+import TrendArea from '../components/charts/TrendArea';
 
 const allStatuses = [
   'New',
@@ -36,6 +39,7 @@ export default function AnalyticsPage() {
   const [pipelineStats, setPipelineStats] = useState([]);
   const [sourceStats, setSourceStats] = useState([]);
   const [recentActivities, setRecentActivities] = useState([]);
+  const [trend, setTrend] = useState([]);
 
   const loadAnalyticsData = async (isManualRefresh = false) => {
     if (isManualRefresh) setRefreshing(true);
@@ -87,7 +91,37 @@ export default function AnalyticsPage() {
       });
       setSourceStats(sources);
 
-      // Section 4: Recent Activity (Latest 5 records)
+      // Section 4: Leads per day for the last 30 days. Every day is present,
+      // including the empty ones - dropping them would compress the gaps and
+      // make a quiet week look busy.
+      const DAYS = 30;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const buckets = new Map();
+      for (let i = DAYS - 1; i >= 0; i -= 1) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        buckets.set(d.toISOString().slice(0, 10), 0);
+      }
+      allLeads.forEach((l) => {
+        if (!l.created_at) return;
+        const key = new Date(l.created_at).toISOString().slice(0, 10);
+        if (buckets.has(key)) buckets.set(key, buckets.get(key) + 1);
+      });
+
+      setTrend(
+        Array.from(buckets, ([iso, count]) => ({
+          iso,
+          count,
+          label: new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric'
+          })
+        }))
+      );
+
+      // Section 5: Recent Activity (Latest 5 records)
       setRecentActivities(allLeads.slice(0, 5));
     } catch (err) {
       console.error('Error fetching analytics:', err);
@@ -97,6 +131,7 @@ export default function AnalyticsPage() {
       setSiteVisitsCount(0);
       setPipelineStats(allStatuses.map((st) => ({ status: st, count: 0, percentage: 0 })));
       setSourceStats(sourceMap.map((src) => ({ ...src, count: 0, percentage: 0 })));
+      setTrend([]);
       setRecentActivities([]);
     } finally {
       setLoading(false);
@@ -165,7 +200,7 @@ export default function AnalyticsPage() {
                 </div>
               </div>
               <div className="text-xl sm:text-2xl font-bold text-charcoal tracking-tight mb-1">
-                {totalLeads > 0 ? totalLeads : '—'}
+                {totalLeads}
               </div>
               <div className="pt-2 border-t border-gray-100 text-[11px] text-gray-400 font-medium">
                 Live database record count
@@ -183,7 +218,7 @@ export default function AnalyticsPage() {
                 </div>
               </div>
               <div className="text-xl sm:text-2xl font-bold text-charcoal tracking-tight mb-1">
-                {newLeadsCount > 0 ? newLeadsCount : '—'}
+                {newLeadsCount}
               </div>
               <div className="pt-2 border-t border-gray-100 text-[11px] text-gray-400 font-medium">
                 Status: New inquiries
@@ -201,7 +236,7 @@ export default function AnalyticsPage() {
                 </div>
               </div>
               <div className="text-xl sm:text-2xl font-bold text-charcoal tracking-tight mb-1">
-                {qualifiedCount > 0 ? qualifiedCount : '—'}
+                {qualifiedCount}
               </div>
               <div className="pt-2 border-t border-gray-100 text-[11px] text-gray-400 font-medium">
                 Verified buyer interest
@@ -219,7 +254,7 @@ export default function AnalyticsPage() {
                 </div>
               </div>
               <div className="text-xl sm:text-2xl font-bold text-charcoal tracking-tight mb-1">
-                {siteVisitsCount > 0 ? siteVisitsCount : '—'}
+                {siteVisitsCount}
               </div>
               <div className="pt-2 border-t border-gray-100 text-[11px] text-gray-400 font-medium">
                 Scheduled property tours
@@ -227,66 +262,45 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* SECTION 2 & SECTION 3 (Grid) */}
+          {/* SECTION 2 — LEADS OVER TIME */}
+          <div className="bg-white p-5 rounded-xl border border-gray-200/80 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h2 className="text-sm font-bold text-charcoal">Leads Over Time</h2>
+              <span className="text-xs text-gray-500 font-medium">Last 30 days</span>
+            </div>
+            {trend.length > 0 ? (
+              <TrendArea data={trend} />
+            ) : (
+              <p className="text-xs text-gray-400 py-8 text-center">No leads yet.</p>
+            )}
+          </div>
+
+          {/* SECTION 3 & SECTION 4 (Grid) */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* SECTION 2: LEAD PIPELINE (7 cols Desktop) */}
+            {/* LEAD PIPELINE */}
             <div className="lg:col-span-7 bg-white p-5 rounded-xl border border-gray-200/80 shadow-2xs space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-charcoal">Lead Pipeline Breakdown</h2>
                 <span className="text-xs text-gray-500 font-medium">Actual count by status</span>
               </div>
-
-              <div className="space-y-3">
-                {pipelineStats.map((item) => (
-                  <div key={item.status} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-semibold text-charcoal">
-                      <span>{item.status}</span>
-                      <span className="text-gray-500 font-mono text-[11px]">
-                        {item.count} ({item.percentage}%)
-                      </span>
-                    </div>
-
-                    <div className="h-1.5 w-full bg-ivory/80 rounded-full overflow-hidden border border-gray-100">
-                      <div
-                        className="h-full bg-burgundy rounded-full transition-all duration-300"
-                        style={{ width: `${item.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <PipelineBars data={pipelineStats} total={totalLeads} />
             </div>
 
-            {/* SECTION 3: LEAD SOURCES (5 cols Desktop) */}
+            {/* LEAD SOURCES */}
             <div className="lg:col-span-5 bg-white p-5 rounded-xl border border-gray-200/80 shadow-2xs space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-charcoal">Lead Source Distribution</h2>
                 <span className="text-xs text-gray-500 font-medium">By channel</span>
               </div>
-
-              <div className="space-y-3.5">
-                {sourceStats.map((src) => (
-                  <div key={src.key} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-semibold text-charcoal">
-                      <span>{src.name}</span>
-                      <span className="text-gray-500 font-mono text-[11px]">
-                        {src.count} ({src.percentage}%)
-                      </span>
-                    </div>
-
-                    <div className="h-1.5 w-full bg-ivory/80 rounded-full overflow-hidden border border-gray-100">
-                      <div
-                        className="h-full bg-gold rounded-full transition-all duration-300"
-                        style={{ width: `${src.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {totalLeads > 0 ? (
+                <SourceDonut data={sourceStats} total={totalLeads} />
+              ) : (
+                <p className="text-xs text-gray-400 py-8 text-center">No leads yet.</p>
+              )}
             </div>
           </div>
 
-          {/* SECTION 4 — RECENT ACTIVITY */}
+          {/* SECTION 5 — RECENT ACTIVITY */}
           <div className="bg-white p-5 rounded-xl border border-gray-200/80 shadow-2xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <div>
